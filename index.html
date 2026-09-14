@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="es">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Incidencias | Mesa técnica</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
+    <link href="css/app.css" rel="stylesheet">
+</head>
+<body>
+    <main id="login-view" class="login-shell">
+        <section class="login-panel">
+            <div class="brand-mark"><i class="bi bi-life-preserver"></i></div>
+            <p class="eyebrow">Mesa técnica escolar</p>
+            <h1>Resolver empieza por registrar.</h1>
+            <p class="login-copy">Gestioná tus incidencias y seguí cada avance desde un solo lugar.</p>
+            <form id="login-form" class="mt-4">
+                <div class="mb-3">
+                    <label for="login-email" class="form-label">Correo electrónico</label>
+                    <input id="login-email" type="email" class="form-control form-control-lg" required autocomplete="email">
+                </div>
+                <div class="mb-3">
+                    <label for="login-password" class="form-label">Contraseña</label>
+                    <input id="login-password" type="password" class="form-control form-control-lg" required autocomplete="current-password">
+                </div>
+                <div id="login-alert" class="alert d-none" role="alert"></div>
+                <button class="btn btn-primary btn-lg w-100" type="submit">
+                    <span class="button-label">Ingresar</span>
+                    <span class="spinner-border spinner-border-sm d-none" aria-hidden="true"></span>
+                </button>
+            </form>
+        </section>
+        <aside class="login-aside">
+            <span class="aside-number">01</span>
+            <h2>Una señal clara para cada problema.</h2>
+            <p>Registrá, asigná y resolvé incidencias con trazabilidad para toda la institución.</p>
+            <div class="aside-rule"></div>
+            <small>DESARROLLO DE SOFTWARE · 2026</small>
+        </aside>
+    </main>
+
+    <div id="app-view" class="d-none">
+        <nav class="navbar app-navbar">
+            <div class="container-fluid app-container">
+                <a class="navbar-brand" href="#incidents"><i class="bi bi-life-preserver"></i><span>mesa<span class="brand-accent">/</span>técnica</span></a>
+                <div class="d-flex align-items-center gap-3">
+                    <div class="user-summary d-none d-sm-block"><strong id="current-user-name">Usuario</strong><small id="current-user-role">usuario</small></div>
+                    <button id="logout-button" class="btn btn-outline-secondary btn-sm" type="button"><i class="bi bi-box-arrow-right"></i><span class="d-none d-sm-inline ms-1">Salir</span></button>
+                </div>
+            </div>
+        </nav>
+
+        <div class="container-fluid app-container py-4 py-lg-5">
+            <div id="global-alert" class="alert d-none" role="alert"></div>
+            <section id="incidents-view">
+                <div class="page-heading">
+                    <div>
+                        <p class="eyebrow">Panel de seguimiento</p>
+                        <h1>Incidencias</h1>
+                        <p class="page-description">Todo lo que necesita atención, en un vistazo.</p>
+                    </div>
+                    <button id="new-incident-button" class="btn btn-primary" type="button"><i class="bi bi-plus-lg me-1"></i>Nueva incidencia</button>
+                </div>
+                <div class="filter-bar">
+                    <div class="filter-title"><i class="bi bi-sliders2"></i><span>Filtrar vista</span></div>
+                    <div class="row g-2 flex-grow-1">
+                        <div class="col-12 col-md-4"><select id="status-filter" class="form-select"><option value="">Todos los estados</option><option value="abierta">Abierta</option><option value="en_proceso">En proceso</option><option value="resuelta">Resuelta</option></select></div>
+                        <div class="col-12 col-md-4"><select id="category-filter" class="form-select"><option value="">Todas las categorías</option></select></div>
+                        <div class="col-12 col-md-auto"><button id="clear-filters" class="btn btn-light w-100" type="button">Limpiar</button></div>
+                    </div>
+                </div>
+                <div class="table-wrap">
+                    <div class="table-responsive">
+                        <table class="table align-middle mb-0">
+                            <thead><tr><th>ID</th><th>Incidencia</th><th>Categoría</th><th>Estado</th><th>Técnico</th><th></th></tr></thead>
+                            <tbody id="incidents-table-body"><tr><td colspan="6" class="empty-state"><span class="spinner-border spinner-border-sm"></span> Cargando incidencias...</td></tr></tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+
+            <section id="new-incident-view" class="sub-view d-none">
+                <button class="back-link" data-view="incidents" type="button"><i class="bi bi-arrow-left"></i> Volver a incidencias</button>
+                <div class="form-heading"><p class="eyebrow">Nuevo registro</p><h1>Crear incidencia</h1><p>Contanos qué está pasando para que el equipo pueda ayudarte.</p></div>
+                <form id="incident-form" class="content-form">
+                    <div class="mb-3"><label for="incident-title" class="form-label">Título</label><input id="incident-title" class="form-control" maxlength="255" required placeholder="Ej. La impresora no responde"></div>
+                    <div class="mb-3"><label for="incident-description" class="form-label">Descripción</label><textarea id="incident-description" class="form-control" rows="5" required placeholder="Describí el problema y cuándo comenzó"></textarea></div>
+                    <div class="mb-4"><label for="incident-category" class="form-label">Categoría</label><select id="incident-category" class="form-select" required><option value="">Seleccioná una categoría</option></select></div>
+                    <div class="d-flex gap-2"><button class="btn btn-primary" type="submit"><span class="button-label">Registrar incidencia</span><span class="spinner-border spinner-border-sm d-none"></span></button><button class="btn btn-light" data-view="incidents" type="button">Cancelar</button></div>
+                </form>
+            </section>
+
+            <section id="detail-view" class="sub-view d-none">
+                <button class="back-link" data-view="incidents" type="button"><i class="bi bi-arrow-left"></i> Volver a incidencias</button>
+                <div id="incident-detail"></div>
+            </section>
+        </div>
+    </div>
+
+    <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="js/app.js"></script>
+</body>
+</html>
