@@ -49,8 +49,9 @@ function normalizeIncident(item) {
 }
 function displayName(person) { return person?.name ?? person?.nombre ?? 'Sin asignar'; }
 function categoryName(category) { return typeof category === 'string' ? category : category?.name ?? category?.nombre ?? 'Sin categoría'; }
-function statusLabel(status) { return ({ abierta: 'Abierta', abierto: 'Abierta', en_proceso: 'En proceso', en_curso: 'En proceso', resuelta: 'Resuelta', finalizado: 'Resuelta' })[status] ?? status; }
-function statusClass(status) { return `status-${status.replaceAll('_', '-')}`; }
+function userType() { return state.user?.tipo ?? state.user?.role ?? 'cliente'; }
+function statusLabel(status) { return ({ abierta: 'Abierta', abierto: 'Abierta', en_proceso: 'En proceso', en_curso: 'En proceso', resuelta: 'Resuelta', finalizado: 'Finalizada' })[status] ?? status; }
+function statusClass(status) { return `status-${status.replace('abierto', 'abierta').replace('en_curso', 'en-proceso').replace('finalizado', 'resuelta')}`; }
 function formatDate(date) { return date ? new Date(date).toLocaleString('es-AR', { dateStyle: 'medium', timeStyle: 'short' }) : 'Sin fecha'; }
 function showAlert(message, type = 'danger', target = '#global-alert') { $(target).removeClass('d-none alert-danger alert-success alert-warning').addClass(`alert-${type}`).text(message); }
 function hideAlert(target = '#global-alert') { $(target).addClass('d-none'); }
@@ -80,7 +81,7 @@ function renderIncidents() {
     $('#incidents-table-body').html(rows || '<tr><td colspan="6" class="empty-state">No hay incidencias que coincidan con los filtros.</td></tr>');
 }
 function loadIncidents() {
-    const filters = { status: $('#status-filter').val(), estado: $('#status-filter').val(), category_id: $('#category-filter').val() };
+    const filters = { estado: $('#status-filter').val(), categoria_id: $('#category-filter').val() };
     $('#incidents-table-body').html('<tr><td colspan="6" class="empty-state"><span class="spinner-border spinner-border-sm"></span> Cargando incidencias...</td></tr>');
     api.incidents(filters).done((response) => { state.incidents = (unwrap(response) || []).map(normalizeIncident); renderIncidents(); }).fail(() => showAlert('No se pudieron cargar las incidencias. Verificá que la API esté disponible.'));
 }
@@ -89,13 +90,13 @@ function loadDetail(id) {
     $.when(api.incident(id), api.comments(id)).done((incidentResponse, commentsResponse) => {
         const incident = normalizeIncident(unwrap(incidentResponse));
         const comments = (unwrap(commentsResponse) || []).sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
-        const canTake = state.user?.role === 'tecnico' && incident.status === 'abierta';
-        const canResolve = state.user?.role === 'tecnico' && incident.status === 'en_proceso' && String(incident.technician?.id) === String(state.user.id);
+        const canTake = userType() === 'tecnico' && incident.status === 'abierto';
+        const canResolve = userType() === 'tecnico' && incident.status === 'en_curso' && String(incident.technician?.id) === String(state.user.id);
         $('#incident-detail').html(`<div class="detail-header"><p class="eyebrow">Incidencia #${incident.id}</p><h1>${escapeHtml(incident.title)}</h1><span class="status-badge ${statusClass(incident.status)}">${statusLabel(incident.status)}</span></div>
             <div class="detail-grid"><div class="detail-item"><small>Categoría</small><strong>${escapeHtml(categoryName(incident.category))}</strong></div><div class="detail-item"><small>Creada por</small><strong>${escapeHtml(displayName(incident.creator))}</strong></div><div class="detail-item"><small>Técnico</small><strong>${escapeHtml(displayName(incident.technician))}</strong></div></div>
             <p class="detail-copy">${escapeHtml(incident.description)}</p>${incident.resolution ? `<div class="alert alert-success mt-4"><strong>Resolución</strong><p class="mb-0 mt-1">${escapeHtml(incident.resolution)}</p></div>` : ''}
             <div class="d-flex gap-2 mt-4">${canTake ? '<button id="take-incident" class="btn btn-primary" type="button">Tomar incidencia</button>' : ''}${canResolve ? '<button id="resolve-incident" class="btn btn-primary" type="button">Registrar resolución</button>' : ''}</div>
-            <hr class="my-5"><h2 class="h3">Comentarios</h2><div class="comments-list mt-3">${comments.map((comment) => `<div class="comment"><div class="comment-meta"><strong>${escapeHtml(displayName(comment.user ?? comment.usuario))}</strong> · ${formatDate(comment.created_at)}</div><p class="comment-body">${escapeHtml(comment.comment ?? comment.comentario ?? comment.contenido ?? '')}</p></div>`).join('') || '<p class="text-muted">Todavía no hay comentarios.</p>'}</div>
+            <hr class="my-5"><h2 class="h3">Comentarios</h2><div class="comments-list mt-3">${comments.map((comment) => `<div class="comment"><div class="comment-meta"><strong>${escapeHtml(displayName(comment.autor ?? comment.user ?? comment.usuario))}</strong> · ${formatDate(comment.created_at)}</div><p class="comment-body">${escapeHtml(comment.contenido ?? comment.comment ?? comment.comentario ?? '')}</p></div>`).join('') || '<p class="text-muted">Todavía no hay comentarios.</p>'}</div>
             <form id="comment-form" class="mt-4"><label class="form-label" for="comment-text">Agregar comentario</label><div class="input-group"><input id="comment-text" class="form-control" required maxlength="1000" placeholder="Escribí una actualización"><button class="btn btn-primary" type="submit">Enviar</button></div></form>`);
         $('#comment-form').on('submit', function (event) { event.preventDefault(); api.addComment(id, $('#comment-text').val()).done(() => loadDetail(id)).fail(() => showAlert('No se pudo agregar el comentario.')); });
         $('#take-incident').on('click', () => api.take(id).done(() => loadDetail(id)).fail(() => showAlert('No se pudo tomar la incidencia.')));
@@ -104,7 +105,7 @@ function loadDetail(id) {
 }
 function escapeHtml(value) { return $('<div>').text(value ?? '').html(); }
 function logout(callApi = true) { if (callApi) api.logout().always(() => logout(false)); localStorage.removeItem(TOKEN_KEY); localStorage.removeItem(USER_KEY); state.user = null; $('#app-view').addClass('d-none'); $('#login-view').removeClass('d-none'); }
-function openApp(user) { state.user = user; localStorage.setItem(USER_KEY, JSON.stringify(user)); $('#current-user-name').text(displayName(user)); $('#current-user-role').text(user.role ?? user.tipo ?? 'usuario'); $('#login-view').addClass('d-none'); $('#app-view').removeClass('d-none'); api.categories().done((response) => { state.categories = unwrap(response) || []; renderCategories(); }).always(() => navigate('incidents')); }
+function openApp(user) { state.user = user; localStorage.setItem(USER_KEY, JSON.stringify(user)); $('#current-user-name').text(displayName(user)); $('#current-user-role').text(userType()); $('#login-view').addClass('d-none'); $('#app-view').removeClass('d-none'); api.categories().done((response) => { state.categories = unwrap(response) || []; renderCategories(); }).always(() => navigate('incidents')); }
 
 $('#login-form').on('submit', function (event) { event.preventDefault(); hideAlert('#login-alert'); const button = $(this).find('button[type="submit"]'); setLoading(button, true); api.login($('#login-email').val(), $('#login-password').val()).done((response) => { const data = unwrap(response); if (data.token) localStorage.setItem(TOKEN_KEY, data.token); openApp(data.user ?? data); }).fail((xhr) => showAlert(xhr.responseJSON?.message ?? 'No se pudo iniciar sesión.', 'danger', '#login-alert')).always(() => setLoading(button, false)); });
 $('#logout-button').on('click', () => logout());
