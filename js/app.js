@@ -27,9 +27,9 @@ const api = {
     createIncident(data) { return this.request({ path: '/incidencias', method: 'POST', data }); },
     incident(id) { return this.request({ path: `/incidencias/${id}` }); },
     comments(id) { return this.request({ path: `/incidencias/${id}/comentarios` }); },
-    addComment(id, comment) { return this.request({ path: `/incidencias/${id}/comentarios`, method: 'POST', data: { comment, contenido: comment } }); },
+    addComment(id, contenido) { return this.request({ path: `/incidencias/${id}/comentarios`, method: 'POST', data: { contenido } }); },
     take(id) { return this.request({ path: `/incidencias/${id}/tomar`, method: 'PUT' }); },
-    resolve(id, resolution) { return this.request({ path: `/incidencias/${id}/resolver`, method: 'PUT', data: { resolution, resolucion: resolution } }); },
+    resolve(id, resolucion) { return this.request({ path: `/incidencias/${id}/resolver`, method: 'PUT', data: { resolucion } }); },
     logout() { return this.request({ path: '/logout', method: 'POST' }); },
 };
 
@@ -40,16 +40,22 @@ function normalizeIncident(item) {
         title: item.title ?? item.titulo ?? 'Sin título',
         description: item.description ?? item.descripcion ?? '',
         status: String(item.status ?? item.estado ?? 'abierta').toLowerCase().replaceAll(' ', '_'),
-        category: item.category ?? item.categoria ?? item.categoria?.name ?? { name: item.categoria_nombre ?? 'Sin categoría' },
-        creator: item.user ?? item.usuario ?? item.cliente ?? item.creador,
-        technician: item.technician ?? item.tecnico,
-        resolution: item.resolution ?? item.resolucion,
+        category: item.categoria ?? item.category ?? { nombre: item.categoria_nombre ?? 'Sin categoría' },
+        creator: item.cliente ?? item.user ?? item.usuario ?? item.creador,
+        technician: item.tecnico ?? item.technician,
+        resolution: item.resolucion ?? item.resolution,
         createdAt: item.created_at ?? item.fecha_creacion,
     };
 }
 function displayName(person) { return person?.name ?? person?.nombre ?? 'Sin asignar'; }
 function categoryName(category) { return typeof category === 'string' ? category : category?.name ?? category?.nombre ?? 'Sin categoría'; }
 function userType() { return state.user?.tipo ?? state.user?.role ?? 'cliente'; }
+function roleHome(role = userType()) { return role === 'tecnico' ? 'tecnico.html' : 'cliente.html'; }
+function requireRole() {
+    const requiredRole = document.body.dataset.requiredRole;
+    if (requiredRole && userType() !== requiredRole) { window.location.replace(roleHome()); return false; }
+    return true;
+}
 function statusLabel(status) { return ({ abierta: 'Abierta', abierto: 'Abierta', en_proceso: 'En proceso', en_curso: 'En proceso', resuelta: 'Resuelta', finalizado: 'Finalizada' })[status] ?? status; }
 function statusClass(status) { return `status-${status.replace('abierto', 'abierta').replace('en_curso', 'en-proceso').replace('finalizado', 'resuelta')}`; }
 function formatDate(date) { return date ? new Date(date).toLocaleString('es-AR', { dateStyle: 'medium', timeStyle: 'short' }) : 'Sin fecha'; }
@@ -88,8 +94,8 @@ function loadIncidents() {
 function loadDetail(id) {
     $('#incident-detail').html('<div class="empty-state"><span class="spinner-border spinner-border-sm"></span> Cargando detalle...</div>');
     $.when(api.incident(id), api.comments(id)).done((incidentResponse, commentsResponse) => {
-        const incident = normalizeIncident(unwrap(incidentResponse));
-        const comments = (unwrap(commentsResponse) || []).sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+        const incident = normalizeIncident(unwrap(incidentResponse[0]));
+        const comments = (unwrap(commentsResponse[0]) || []).sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
         const canTake = userType() === 'tecnico' && incident.status === 'abierto';
         const canResolve = userType() === 'tecnico' && incident.status === 'en_curso' && String(incident.technician?.id) === String(state.user.id);
         $('#incident-detail').html(`<div class="detail-header"><p class="eyebrow">Incidencia #${incident.id}</p><h1>${escapeHtml(incident.title)}</h1><span class="status-badge ${statusClass(incident.status)}">${statusLabel(incident.status)}</span></div>
@@ -104,8 +110,8 @@ function loadDetail(id) {
     }).fail(() => showAlert('No se pudo cargar el detalle de la incidencia.'));
 }
 function escapeHtml(value) { return $('<div>').text(value ?? '').html(); }
-function logout(callApi = true) { if (callApi) api.logout().always(() => logout(false)); localStorage.removeItem(TOKEN_KEY); localStorage.removeItem(USER_KEY); state.user = null; $('#app-view').addClass('d-none'); $('#login-view').removeClass('d-none'); }
-function openApp(user) { state.user = user; localStorage.setItem(USER_KEY, JSON.stringify(user)); $('#current-user-name').text(displayName(user)); $('#current-user-role').text(userType()); $('#login-view').addClass('d-none'); $('#app-view').removeClass('d-none'); api.categories().done((response) => { state.categories = unwrap(response) || []; renderCategories(); }).always(() => navigate('incidents')); }
+function logout(callApi = true) { if (callApi) api.logout().always(() => logout(false)); localStorage.removeItem(TOKEN_KEY); localStorage.removeItem(USER_KEY); state.user = null; if (document.body.dataset.requiredRole) window.location.replace('login.html'); else $('#login-view').removeClass('d-none'); }
+function openApp(user) { state.user = user; localStorage.setItem(USER_KEY, JSON.stringify(user)); if (!document.body.dataset.requiredRole) { window.location.replace(roleHome()); return; } if (!requireRole()) return; $('#current-user-name').text(displayName(user)); $('#current-user-role').text(userType()); api.categories().done((response) => { state.categories = unwrap(response) || []; renderCategories(); }).always(() => { if ($('#incidents-view').length) loadIncidents(); }); }
 
 $('#login-form').on('submit', function (event) { event.preventDefault(); hideAlert('#login-alert'); const button = $(this).find('button[type="submit"]'); setLoading(button, true); api.login($('#login-email').val(), $('#login-password').val()).done((response) => { const data = unwrap(response); if (data.token) localStorage.setItem(TOKEN_KEY, data.token); openApp(data.user ?? data); }).fail((xhr) => showAlert(xhr.responseJSON?.message ?? 'No se pudo iniciar sesión.', 'danger', '#login-alert')).always(() => setLoading(button, false)); });
 $('#logout-button').on('click', () => logout());
@@ -114,7 +120,8 @@ $('[data-view]').on('click', function () { navigate($(this).data('view')); });
 $('#status-filter, #category-filter').on('change', loadIncidents);
 $('#clear-filters').on('click', () => { $('#status-filter, #category-filter').val(''); loadIncidents(); });
 $(document).on('click', '.view-detail', function () { navigate('detail', $(this).data('id')); });
-$('#incident-form').on('submit', function (event) { event.preventDefault(); const button = $(this).find('button[type="submit"]'); setLoading(button, true); api.createIncident({ title: $('#incident-title').val(), titulo: $('#incident-title').val(), description: $('#incident-description').val(), descripcion: $('#incident-description').val(), category_id: $('#incident-category').val(), categoria_id: $('#incident-category').val() }).done((response) => navigate('detail', unwrap(response).id)).fail((xhr) => showAlert(xhr.responseJSON?.message ?? 'No se pudo registrar la incidencia.')).always(() => setLoading(button, false)); });
+$('#incident-form').on('submit', function (event) { event.preventDefault(); if (userType() !== 'cliente') return; const button = $(this).find('button[type="submit"]'); setLoading(button, true); api.createIncident({ titulo: $('#incident-title').val(), descripcion: $('#incident-description').val(), categoria_id: $('#incident-category').val() }).done(() => window.location.replace('cliente.html')).fail((xhr) => showAlert(xhr.responseJSON?.message ?? 'No se pudo registrar la incidencia.')).always(() => setLoading(button, false)); });
 
 const storedToken = localStorage.getItem(TOKEN_KEY);
 if (storedToken) api.user().done((response) => openApp(unwrap(response))).fail(() => logout(false));
+else if (document.body.dataset.requiredRole) window.location.replace('login.html');

@@ -30,7 +30,7 @@ El backend debe estar iniciado por separado. Luego servir este directorio:
 php -S localhost:5500 -t .
 ```
 
-Abrir `http://localhost:5500` en el navegador.
+Abrir `http://localhost:5500/login.html` en el navegador.
 
 La URL de la API se configura en `js/app.js`:
 
@@ -69,46 +69,6 @@ El frontend no contiene Blade, modelos ni acceso directo a la base de datos. Tod
 
 ## Despliegue
 
-El frontend puede publicarse en cualquier servidor estatico, como Apache, Nginx, GitHub Pages o un hosting estatico. Copiar `index.html`, `css/` y `js/` al directorio publico y cambiar `API_BASE_URL` para apuntar al backend publicado.
+El frontend puede publicarse en cualquier servidor estatico, como Apache, Nginx, GitHub Pages o un hosting estatico. Publicar `login.html`, `cliente.html`, `tecnico.html`, `crear-incidencia.html`, `css/` y `js/` en el directorio publico y configurar `API_BASE_URL` para apuntar al backend publicado. `login.html` es la entrada de la aplicacion.
 
 El backend debe permitir el dominio final del frontend mediante `CORS_ALLOWED_ORIGINS`. Si el frontend y el backend se publican con HTTPS, ambos deben utilizar HTTPS.
-# Frontend - Sistema de Gestion de Incidencias
-
-Aplicacion frontend independiente para el Sistema de Gestion de Incidencias Tecnicas. Consume la API REST del backend Laravel mediante AJAX, JSON y jQuery.
-
-## Tecnologias
-
-- HTML5 y CSS3
-- Bootstrap 5.3
-- JavaScript y jQuery 3.7
-- API REST Laravel Sanctum
-
-## Requisitos
-
-- Backend Laravel ejecutandose, por defecto en `http://localhost:8000`.
-- Un navegador moderno.
-- Para desarrollo local se recomienda un servidor estatico, por ejemplo la extension Live Server de VS Code.
-
-## Ejecucion
-
-1. Ejecutar el backend desde su propio repositorio:
-
-   ```bash
-   php artisan serve
-   ```
-
-2. Abrir este proyecto con Live Server o servirlo con cualquier servidor HTTP estatico.
-3. Si la API usa otra URL, cambiar `API_BASE_URL` al comienzo de `js/app.js`.
-
-El frontend no contiene Blade, modelos ni acceso directo a la base de datos.
-
-## Pantallas
-
-- Login mediante `POST /api/login`.
-- Listado de incidencias con filtros por estado y categoria.
-- Alta de incidencias.
-- Detalle, comentarios, toma y resolucion segun el rol.
-
-## Contrato esperado de la API
-
-El frontend consume los endpoints definidos en la documentacion: login, logout, usuario autenticado, incidencias, toma, resolucion y comentarios. Tambien acepta temporalmente nombres equivalentes en espanol e ingles para facilitar la integracion con el backend actual.
