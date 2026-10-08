@@ -42,22 +42,27 @@ function normalizeIncident(item) {
         status: String(item.status ?? item.estado ?? 'abierta').toLowerCase().replaceAll(' ', '_'),
         category: item.categoria ?? item.category ?? { nombre: item.categoria_nombre ?? 'Sin categoría' },
         creator: item.cliente ?? item.user ?? item.usuario ?? item.creador,
+        creatorId: item.usuario_id ?? item.cliente_id ?? item.cliente?.id ?? item.user?.id,
         technician: item.tecnico ?? item.technician,
         resolution: item.resolucion ?? item.resolution,
         createdAt: item.created_at ?? item.fecha_creacion,
+        completedAt: item.fecha_finalizacion ?? item.completed_at,
     };
 }
 function displayName(person) { return person?.name ?? person?.nombre ?? 'Sin asignar'; }
 function categoryName(category) { return typeof category === 'string' ? category : category?.name ?? category?.nombre ?? 'Sin categoría'; }
-function userType() { return state.user?.tipo ?? state.user?.role ?? 'cliente'; }
-function roleHome(role = userType()) { return role === 'tecnico' ? 'tecnico.html' : 'cliente.html'; }
+function userType() {
+    const role = state.user?.tipo ?? state.user?.role;
+    return role === 'cliente' || role === 'tecnico' ? role : null;
+}
+function roleHome(role = userType()) { return role === 'tecnico' ? 'tecnico.html' : role === 'cliente' ? 'cliente.html' : 'login.html'; }
 function requireRole() {
     const requiredRole = document.body.dataset.requiredRole;
     if (requiredRole && userType() !== requiredRole) { window.location.replace(roleHome()); return false; }
     return true;
 }
-function statusLabel(status) { return ({ abierta: 'Abierta', abierto: 'Abierta', en_proceso: 'En proceso', en_curso: 'En proceso', resuelta: 'Resuelta', finalizado: 'Finalizada' })[status] ?? status; }
-function statusClass(status) { return `status-${status.replace('abierto', 'abierta').replace('en_curso', 'en-proceso').replace('finalizado', 'resuelta')}`; }
+function statusLabel(status) { return ({ abierta: 'Abierta', abierto: 'Abierta', en_proceso: 'En proceso', en_curso: 'En proceso', resuelta: 'Resuelta', finalizado: 'Finalizada' })[status] ?? 'Estado desconocido'; }
+function statusClass(status) { return ({ abierta: 'status-abierta', abierto: 'status-abierta', en_proceso: 'status-en-proceso', en_curso: 'status-en-proceso', resuelta: 'status-resuelta', finalizado: 'status-resuelta' })[status] ?? 'status-unknown'; }
 function formatDate(date) { return date ? new Date(date).toLocaleString('es-AR', { dateStyle: 'medium', timeStyle: 'short' }) : 'Sin fecha'; }
 function showAlert(message, type = 'danger', target = '#global-alert') { $(target).removeClass('d-none alert-danger alert-success alert-warning').addClass(`alert-${type}`).text(message); }
 function hideAlert(target = '#global-alert') { $(target).addClass('d-none'); }
@@ -72,7 +77,7 @@ function navigate(view, id = null) {
 }
 
 function renderCategories() {
-    const options = state.categories.map((category) => `<option value="${category.id}">${categoryName(category)}</option>`).join('');
+    const options = state.categories.map((category) => `<option value="${escapeHtml(category.id)}">${escapeHtml(categoryName(category))}</option>`).join('');
     $('#category-filter, #incident-category').append(options);
 }
 function renderIncidents() {
@@ -80,9 +85,9 @@ function renderIncidents() {
         <td class="incident-id">#${incident.id}</td>
         <td><div class="incident-title">${escapeHtml(incident.title)}</div><div class="incident-id">${formatDate(incident.createdAt)}</div></td>
         <td>${escapeHtml(categoryName(incident.category))}</td>
-        <td><span class="status-badge ${statusClass(incident.status)}">${statusLabel(incident.status)}</span></td>
+        <td><span class="status-badge ${statusClass(incident.status)}">${escapeHtml(statusLabel(incident.status))}</span></td>
         <td>${escapeHtml(displayName(incident.technician))}</td>
-        <td class="text-end"><button class="btn btn-sm btn-light view-detail" data-id="${incident.id}" type="button" aria-label="Ver detalle"><i class="bi bi-arrow-up-right"></i></button></td>
+        <td class="text-end"><button class="btn btn-sm btn-light view-detail" data-id="${escapeHtml(incident.id)}" type="button" aria-label="Ver detalle"><i class="bi bi-arrow-up-right"></i></button></td>
     </tr>`).join('');
     $('#incidents-table-body').html(rows || '<tr><td colspan="6" class="empty-state">No hay incidencias que coincidan con los filtros.</td></tr>');
 }
@@ -98,11 +103,19 @@ function loadDetail(id) {
         const comments = (unwrap(commentsResponse[0]) || []).sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
         const canTake = userType() === 'tecnico' && incident.status === 'abierto';
         const canResolve = userType() === 'tecnico' && incident.status === 'en_curso' && String(incident.technician?.id) === String(state.user.id);
+        const messages = [
+            { author: incident.creator, authorId: incident.creatorId ?? incident.creator?.id, content: incident.description, createdAt: incident.createdAt, kind: 'description' },
+            ...comments.map((comment) => ({ author: comment.autor ?? comment.user ?? comment.usuario, authorId: comment.user_id ?? comment.autor?.id ?? comment.user?.id, content: comment.contenido ?? comment.comment ?? comment.comentario, createdAt: comment.created_at, kind: 'comment' })),
+        ];
+        if (incident.resolution) {
+            messages.push({ author: incident.technician, authorId: incident.technician?.id, content: incident.resolution, createdAt: incident.completedAt, kind: 'resolution' });
+        }
+        messages.sort((left, right) => new Date(left.createdAt || 0) - new Date(right.createdAt || 0));
+        const conversation = renderConversation(messages, state.user?.id);
         $('#incident-detail').html(`<div class="detail-header"><p class="eyebrow">Incidencia #${incident.id}</p><h1>${escapeHtml(incident.title)}</h1><span class="status-badge ${statusClass(incident.status)}">${statusLabel(incident.status)}</span></div>
             <div class="detail-grid"><div class="detail-item"><small>Categoría</small><strong>${escapeHtml(categoryName(incident.category))}</strong></div><div class="detail-item"><small>Creada por</small><strong>${escapeHtml(displayName(incident.creator))}</strong></div><div class="detail-item"><small>Técnico</small><strong>${escapeHtml(displayName(incident.technician))}</strong></div></div>
-            <p class="detail-copy">${escapeHtml(incident.description)}</p>${incident.resolution ? `<div class="alert alert-success mt-4"><strong>Resolución</strong><p class="mb-0 mt-1">${escapeHtml(incident.resolution)}</p></div>` : ''}
             <div class="d-flex gap-2 mt-4">${canTake ? '<button id="take-incident" class="btn btn-primary" type="button">Tomar incidencia</button>' : ''}${canResolve ? '<button id="resolve-incident" class="btn btn-primary" type="button">Registrar resolución</button>' : ''}</div>
-            <hr class="my-5"><h2 class="h3">Comentarios</h2><div class="comments-list mt-3">${comments.map((comment) => `<div class="comment"><div class="comment-meta"><strong>${escapeHtml(displayName(comment.autor ?? comment.user ?? comment.usuario))}</strong> · ${formatDate(comment.created_at)}</div><p class="comment-body">${escapeHtml(comment.contenido ?? comment.comment ?? comment.comentario ?? '')}</p></div>`).join('') || '<p class="text-muted">Todavía no hay comentarios.</p>'}</div>
+            <section class="conversation mt-4" aria-label="Conversación de la incidencia"><h2 class="h3">Conversación</h2><div class="conversation-thread">${conversation || '<p class="text-muted">Todavía no hay mensajes.</p>'}</div></section>
             <form id="comment-form" class="mt-4"><label class="form-label" for="comment-text">Agregar comentario</label><div class="input-group"><input id="comment-text" class="form-control" required maxlength="1000" placeholder="Escribí una actualización"><button class="btn btn-primary" type="submit">Enviar</button></div></form>`);
         $('#comment-form').on('submit', function (event) { event.preventDefault(); api.addComment(id, $('#comment-text').val()).done(() => loadDetail(id)).fail(() => showAlert('No se pudo agregar el comentario.')); });
         $('#take-incident').on('click', () => api.take(id).done(() => loadDetail(id)).fail(() => showAlert('No se pudo tomar la incidencia.')));
