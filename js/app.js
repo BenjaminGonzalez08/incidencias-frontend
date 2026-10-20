@@ -1,6 +1,8 @@
 const API_BASE_URL = 'http://localhost:8000/api';
 const TOKEN_KEY = 'incidencias_token';
 const USER_KEY = 'incidencias_user';
+const CACHE_KEY = 'incidencias_cache';
+const LAST_DETAIL_KEY = 'incidencias_last_detail';
 
 const state = { user: null, categories: [], incidents: [] };
 
@@ -67,12 +69,54 @@ function formatDate(date) { return date ? new Date(date).toLocaleString('es-AR',
 function showAlert(message, type = 'danger', target = '#global-alert') { $(target).removeClass('d-none alert-danger alert-success alert-warning').addClass(`alert-${type}`).text(message); }
 function hideAlert(target = '#global-alert') { $(target).addClass('d-none'); }
 function setLoading(button, loading) { button.find('.button-label').toggleClass('d-none', loading); button.find('.spinner-border').toggleClass('d-none', !loading); button.prop('disabled', loading); }
+function getIncidentIdFromUrl() {
+    const params = new URLSearchParams(window.location.search);
+    const id = params.get('incidencia');
+    return id ? Number(id) || id : null;
+}
+function persistDetailRoute(id = null) {
+    const url = new URL(window.location.href);
+    if (id) url.searchParams.set('incidencia', id);
+    else url.searchParams.delete('incidencia');
+    window.history.pushState({}, '', url);
+}
+function readCachedIncidents() {
+    try {
+        const raw = localStorage.getItem(CACHE_KEY);
+        return raw ? JSON.parse(raw) : [];
+    } catch {
+        return [];
+    }
+}
+function writeCachedIncidents(incidents) {
+    try {
+        localStorage.setItem(CACHE_KEY, JSON.stringify(incidents));
+    } catch {
+        // Ignore storage errors to keep the app usable.
+    }
+}
+function persistLastDetail(id) {
+    if (id) localStorage.setItem(LAST_DETAIL_KEY, String(id));
+    else localStorage.removeItem(LAST_DETAIL_KEY);
+}
 
 function navigate(view, id = null) {
     $('.sub-view, #incidents-view').addClass('d-none');
-    if (view === 'incidents') { $('#incidents-view').removeClass('d-none'); loadIncidents(); }
-    if (view === 'new') { $('#new-incident-view').removeClass('d-none'); }
-    if (view === 'detail') { $('#detail-view').removeClass('d-none'); loadDetail(id); }
+    if (view === 'incidents') {
+        persistDetailRoute();
+        $('#incidents-view').removeClass('d-none');
+        loadIncidents();
+    }
+    if (view === 'new') {
+        persistDetailRoute();
+        $('#new-incident-view').removeClass('d-none');
+    }
+    if (view === 'detail') {
+        persistDetailRoute(id);
+        persistLastDetail(id);
+        $('#detail-view').removeClass('d-none');
+        loadDetail(id);
+    }
     window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
@@ -94,7 +138,20 @@ function renderIncidents() {
 function loadIncidents() {
     const filters = { estado: $('#status-filter').val(), categoria_id: $('#category-filter').val() };
     $('#incidents-table-body').html('<tr><td colspan="6" class="empty-state"><span class="spinner-border spinner-border-sm"></span> Cargando incidencias...</td></tr>');
-    api.incidents(filters).done((response) => { state.incidents = (unwrap(response) || []).map(normalizeIncident); renderIncidents(); }).fail(() => showAlert('No se pudieron cargar las incidencias. Verificá que la API esté disponible.'));
+    api.incidents(filters).done((response) => {
+        state.incidents = (unwrap(response) || []).map(normalizeIncident);
+        writeCachedIncidents(state.incidents);
+        renderIncidents();
+    }).fail(() => {
+        const cached = readCachedIncidents();
+        if (cached.length) {
+            state.incidents = cached.map(normalizeIncident);
+            renderIncidents();
+            showAlert('Se mostraron incidencias guardadas localmente porque la API no respondió.', 'warning');
+            return;
+        }
+        showAlert('No se pudieron cargar las incidencias. Verificá que la API esté disponible.');
+    });
 }
 function loadDetail(id) {
     $('#incident-detail').html('<div class="empty-state"><span class="spinner-border spinner-border-sm"></span> Cargando detalle...</div>');
@@ -124,7 +181,7 @@ function loadDetail(id) {
 }
 function escapeHtml(value) { return $('<div>').text(value ?? '').html(); }
 function logout(callApi = true) { if (callApi) api.logout().always(() => logout(false)); localStorage.removeItem(TOKEN_KEY); localStorage.removeItem(USER_KEY); state.user = null; if (document.body.dataset.requiredRole) window.location.replace('login.html'); else $('#login-view').removeClass('d-none'); }
-function openApp(user) { state.user = user; localStorage.setItem(USER_KEY, JSON.stringify(user)); if (!document.body.dataset.requiredRole) { window.location.replace(roleHome()); return; } if (!requireRole()) return; $('#current-user-name').text(displayName(user)); $('#current-user-role').text(userType()); api.categories().done((response) => { state.categories = unwrap(response) || []; renderCategories(); }).always(() => { if ($('#incidents-view').length) loadIncidents(); }); }
+function openApp(user) { state.user = user; localStorage.setItem(USER_KEY, JSON.stringify(user)); if (!document.body.dataset.requiredRole) { window.location.replace(roleHome()); return; } if (!requireRole()) return; $('#current-user-name').text(displayName(user)); $('#current-user-role').text(userType()); const routeId = getIncidentIdFromUrl(); api.categories().done((response) => { state.categories = unwrap(response) || []; renderCategories(); }).always(() => { if ($('#incidents-view').length) loadIncidents(); if (routeId) { setTimeout(() => navigate('detail', routeId), 0); } }); }
 
 $('#login-form').on('submit', function (event) { event.preventDefault(); hideAlert('#login-alert'); const button = $(this).find('button[type="submit"]'); setLoading(button, true); api.login($('#login-email').val(), $('#login-password').val()).done((response) => { const data = unwrap(response); if (data.token) localStorage.setItem(TOKEN_KEY, data.token); openApp(data.user ?? data); }).fail((xhr) => showAlert(xhr.responseJSON?.message ?? 'No se pudo iniciar sesión.', 'danger', '#login-alert')).always(() => setLoading(button, false)); });
 $('#logout-button').on('click', () => logout());
@@ -136,5 +193,16 @@ $(document).on('click', '.view-detail', function () { navigate('detail', $(this)
 $('#incident-form').on('submit', function (event) { event.preventDefault(); if (userType() !== 'cliente') return; const button = $(this).find('button[type="submit"]'); setLoading(button, true); api.createIncident({ titulo: $('#incident-title').val(), descripcion: $('#incident-description').val(), categoria_id: $('#incident-category').val() }).done(() => window.location.replace('cliente.html')).fail((xhr) => showAlert(xhr.responseJSON?.message ?? 'No se pudo registrar la incidencia.')).always(() => setLoading(button, false)); });
 
 const storedToken = localStorage.getItem(TOKEN_KEY);
+const initialIncidentId = getIncidentIdFromUrl();
 if (storedToken) api.user().done((response) => openApp(unwrap(response))).fail(() => logout(false));
 else if (document.body.dataset.requiredRole) window.location.replace('login.html');
+
+window.addEventListener('popstate', () => {
+    const id = getIncidentIdFromUrl();
+    if (id) navigate('detail', id);
+    else if (document.body.dataset.requiredRole) navigate('incidents');
+});
+
+if (initialIncidentId && !storedToken && document.body.dataset.requiredRole) {
+    window.location.replace('login.html');
+}
