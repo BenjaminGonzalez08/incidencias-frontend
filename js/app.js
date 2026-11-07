@@ -1,8 +1,6 @@
 const API_BASE_URL = 'http://localhost:8000/api';
 const TOKEN_KEY = 'incidencias_token';
 const USER_KEY = 'incidencias_user';
-const CACHE_KEY = 'incidencias_cache';
-const LAST_DETAIL_KEY = 'incidencias_last_detail';
 
 const state = { user: null, categories: [], incidents: [] };
 
@@ -30,8 +28,6 @@ const api = {
     incident(id) { return this.request({ path: `/incidencias/${id}` }); },
     comments(id) { return this.request({ path: `/incidencias/${id}/comentarios` }); },
     addComment(id, contenido) { return this.request({ path: `/incidencias/${id}/comentarios`, method: 'POST', data: { contenido } }); },
-    take(id) { return this.request({ path: `/incidencias/${id}/tomar`, method: 'PUT' }); },
-    resolve(id, resolucion) { return this.request({ path: `/incidencias/${id}/resolver`, method: 'PUT', data: { resolucion } }); },
     logout() { return this.request({ path: '/logout', method: 'POST' }); },
 };
 
@@ -53,85 +49,32 @@ function normalizeIncident(item) {
 }
 function displayName(person) { return person?.name ?? person?.nombre ?? 'Sin asignar'; }
 function categoryName(category) { return typeof category === 'string' ? category : category?.name ?? category?.nombre ?? 'Sin categoría'; }
-function userType() {
-    const role = state.user?.tipo ?? state.user?.role;
+function userType(user = state.user) {
+    const role = user?.tipo ?? user?.role;
     return role === 'cliente' || role === 'tecnico' ? role : null;
 }
 function roleHome(role = userType()) { return role === 'tecnico' ? 'tecnico.html' : role === 'cliente' ? 'cliente.html' : 'login.html'; }
-function requireRole() {
-    const requiredRole = document.body.dataset.requiredRole;
-    if (requiredRole && userType() !== requiredRole) { window.location.replace(roleHome()); return false; }
-    return true;
-}
-function statusLabel(status) { return ({ abierta: 'Abierta', abierto: 'Abierta', en_proceso: 'En proceso', en_curso: 'En proceso', resuelta: 'Resuelta', finalizado: 'Finalizada' })[status] ?? 'Estado desconocido'; }
+function statusLabel(status) { return ({ abierta: 'Abierta', abierto: 'Abierta', en_proceso: 'En proceso', en_curso: 'En proceso', resuelta: 'Resuelta', finalizado: 'Resuelta' })[status] ?? 'Estado desconocido'; }
 function statusClass(status) { return ({ abierta: 'status-abierta', abierto: 'status-abierta', en_proceso: 'status-en-proceso', en_curso: 'status-en-proceso', resuelta: 'status-resuelta', finalizado: 'status-resuelta' })[status] ?? 'status-unknown'; }
 function formatDate(date) { return date ? new Date(date).toLocaleString('es-AR', { dateStyle: 'medium', timeStyle: 'short' }) : 'Sin fecha'; }
 function showAlert(message, type = 'danger', target = '#global-alert') { $(target).removeClass('d-none alert-danger alert-success alert-warning').addClass(`alert-${type}`).text(message); }
 function hideAlert(target = '#global-alert') { $(target).addClass('d-none'); }
 function setLoading(button, loading) { button.find('.button-label').toggleClass('d-none', loading); button.find('.spinner-border').toggleClass('d-none', !loading); button.prop('disabled', loading); }
-function getIncidentIdFromUrl() {
-    const params = new URLSearchParams(window.location.search);
-    const id = params.get('incidencia');
-    return id ? Number(id) || id : null;
-}
-function persistDetailRoute(id = null) {
-    const url = new URL(window.location.href);
-    if (id) url.searchParams.set('incidencia', id);
-    else url.searchParams.delete('incidencia');
-    window.history.pushState({}, '', url);
-}
-function readCachedIncidents() {
-    try {
-        const raw = localStorage.getItem(CACHE_KEY);
-        return raw ? JSON.parse(raw) : [];
-    } catch {
-        return [];
-    }
-}
-function writeCachedIncidents(incidents) {
-    try {
-        localStorage.setItem(CACHE_KEY, JSON.stringify(incidents));
-    } catch {
-        // Ignore storage errors to keep the app usable.
-    }
-}
-function persistLastDetail(id) {
-    if (id) localStorage.setItem(LAST_DETAIL_KEY, String(id));
-    else localStorage.removeItem(LAST_DETAIL_KEY);
-}
-
-function navigate(view, id = null) {
-    $('.sub-view, #incidents-view').addClass('d-none');
-    if (view === 'incidents') {
-        persistDetailRoute();
-        $('#incidents-view').removeClass('d-none');
-        loadIncidents();
-    }
-    if (view === 'new') {
-        persistDetailRoute();
-        $('#new-incident-view').removeClass('d-none');
-    }
-    if (view === 'detail') {
-        persistDetailRoute(id);
-        persistLastDetail(id);
-        $('#detail-view').removeClass('d-none');
-        loadDetail(id);
-    }
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-}
-
+function getIncidentIdFromUrl() { return new URLSearchParams(window.location.search).get('incidencia'); }
+function detailUrl(id) { return `detalle-incidencia.html?incidencia=${encodeURIComponent(id)}`; }
 function renderCategories() {
     const options = state.categories.map((category) => `<option value="${escapeHtml(category.id)}">${escapeHtml(categoryName(category))}</option>`).join('');
+    $('#category-filter, #incident-category').find('option:not(:first)').remove();
     $('#category-filter, #incident-category').append(options);
 }
 function renderIncidents() {
     const rows = state.incidents.map((incident) => `<tr>
-        <td class="incident-id">#${incident.id}</td>
-        <td><div class="incident-title">${escapeHtml(incident.title)}</div><div class="incident-id">${formatDate(incident.createdAt)}</div></td>
+        <td class="incident-id">#${escapeHtml(incident.id)}</td>
+        <td><a class="incident-title incident-title-link" href="${detailUrl(incident.id)}">${escapeHtml(incident.title)}</a><div class="incident-id">${formatDate(incident.createdAt)}</div></td>
         <td>${escapeHtml(categoryName(incident.category))}</td>
         <td><span class="status-badge ${statusClass(incident.status)}">${escapeHtml(statusLabel(incident.status))}</span></td>
         <td>${escapeHtml(displayName(incident.technician))}</td>
-        <td class="text-end"><button class="btn btn-sm btn-light view-detail" data-id="${escapeHtml(incident.id)}" type="button" aria-label="Ver detalle"><i class="bi bi-arrow-up-right"></i></button></td>
+        <td class="text-end"><a class="btn btn-sm btn-light" href="${detailUrl(incident.id)}" aria-label="Abrir incidencia ${escapeHtml(incident.id)}"><i class="bi bi-bullseye"></i></a></td>
     </tr>`).join('');
     $('#incidents-table-body').html(rows || '<tr><td colspan="6" class="empty-state">No hay incidencias que coincidan con los filtros.</td></tr>');
 }
@@ -140,69 +83,182 @@ function loadIncidents() {
     $('#incidents-table-body').html('<tr><td colspan="6" class="empty-state"><span class="spinner-border spinner-border-sm"></span> Cargando incidencias...</td></tr>');
     api.incidents(filters).done((response) => {
         state.incidents = (unwrap(response) || []).map(normalizeIncident);
-        writeCachedIncidents(state.incidents);
         renderIncidents();
     }).fail(() => {
-        const cached = readCachedIncidents();
-        if (cached.length) {
-            state.incidents = cached.map(normalizeIncident);
-            renderIncidents();
-            showAlert('Se mostraron incidencias guardadas localmente porque la API no respondió.', 'warning');
-            return;
-        }
         showAlert('No se pudieron cargar las incidencias. Verificá que la API esté disponible.');
     });
 }
+function renderDetail(incidentItem, commentsItems, threadScrollTop = 0) {
+    const incident = normalizeIncident(incidentItem);
+    const comments = commentsItems.map((comment) => ({
+        author: comment.autor ?? comment.user ?? comment.usuario,
+        authorId: comment.user_id ?? comment.autor?.id ?? comment.user?.id,
+        content: comment.contenido ?? comment.comment ?? comment.comentario,
+        createdAt: comment.created_at,
+        kind: 'comment',
+    }));
+    const messages = [
+        { author: incident.creator, authorId: incident.creatorId ?? incident.creator?.id, content: incident.description, createdAt: incident.createdAt, kind: 'description' },
+        ...comments,
+    ];
+    if (incident.resolution) messages.push({ author: incident.technician, authorId: incident.technician?.id, content: incident.resolution, createdAt: incident.completedAt, kind: 'resolution' });
+    messages.sort((left, right) => new Date(left.createdAt || 0) - new Date(right.createdAt || 0));
+    const conversation = renderConversation(messages, state.user?.id);
+
+    $('#incident-detail').html(`<div class="detail-header"><p class="eyebrow">Incidencia #${escapeHtml(incident.id)}</p><h1>${escapeHtml(incident.title)}</h1><span class="status-badge ${statusClass(incident.status)}">${escapeHtml(statusLabel(incident.status))}</span></div>
+        <div class="detail-grid"><div class="detail-item"><small>Categoría</small><strong>${escapeHtml(categoryName(incident.category))}</strong></div><div class="detail-item"><small>Creada por</small><strong>${escapeHtml(displayName(incident.creator))}</strong></div><div class="detail-item"><small>Técnico</small><strong>${escapeHtml(displayName(incident.technician))}</strong></div></div>
+        <section class="conversation mt-4" aria-label="Conversación de la incidencia"><h2 class="h3">Conversación</h2><div class="conversation-thread">${conversation || '<p class="text-muted">Todavía no hay mensajes.</p>'}</div></section>
+        <form id="comment-form" class="mt-4"><label class="form-label" for="comment-text">Agregar comentario</label><div class="input-group"><input id="comment-text" class="form-control" required maxlength="1000" placeholder="Escribí una actualización"><button class="btn btn-primary" type="submit">Enviar</button></div></form>`);
+    $('.conversation-thread').scrollTop(threadScrollTop);
+    $('#comment-form').on('submit', function (event) {
+        event.preventDefault();
+        const content = $('#comment-text').val().trim();
+        if (!content) return;
+        const button = $(this).find('button[type="submit"]');
+        button.prop('disabled', true);
+        api.addComment(incident.id, content).done(() => {
+            const threadScrollTop = $('.conversation-thread').scrollTop();
+            $('#comment-text').val('');
+            api.comments(incident.id).done((response) => {
+                const payload = unwrap(response);
+                const comments = Array.isArray(payload) ? payload : payload?.comentarios ?? [];
+                renderDetail(incidentItem, comments, threadScrollTop);
+            }).fail(() => showAlert('El comentario se guardó, pero no se pudo actualizar la conversación.', 'warning'));
+        }).fail(() => showAlert('No se pudo agregar el comentario.')).always(() => button.prop('disabled', false));
+    });
+}
 function loadDetail(id) {
-    $('#incident-detail').html('<div class="empty-state"><span class="spinner-border spinner-border-sm"></span> Cargando detalle...</div>');
+    $('#incident-detail').html('<div class="empty-state"><span class="spinner-border spinner-border-sm"></span> Cargando incidencia...</div>');
     $.when(api.incident(id), api.comments(id)).done((incidentResponse, commentsResponse) => {
-        const incident = normalizeIncident(unwrap(incidentResponse[0]));
-        const comments = (unwrap(commentsResponse[0]) || []).sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
-        const canTake = userType() === 'tecnico' && incident.status === 'abierto';
-        const canResolve = userType() === 'tecnico' && incident.status === 'en_curso' && String(incident.technician?.id) === String(state.user.id);
-        const messages = [
-            { author: incident.creator, authorId: incident.creatorId ?? incident.creator?.id, content: incident.description, createdAt: incident.createdAt, kind: 'description' },
-            ...comments.map((comment) => ({ author: comment.autor ?? comment.user ?? comment.usuario, authorId: comment.user_id ?? comment.autor?.id ?? comment.user?.id, content: comment.contenido ?? comment.comment ?? comment.comentario, createdAt: comment.created_at, kind: 'comment' })),
-        ];
-        if (incident.resolution) {
-            messages.push({ author: incident.technician, authorId: incident.technician?.id, content: incident.resolution, createdAt: incident.completedAt, kind: 'resolution' });
-        }
-        messages.sort((left, right) => new Date(left.createdAt || 0) - new Date(right.createdAt || 0));
-        const conversation = renderConversation(messages, state.user?.id);
-        $('#incident-detail').html(`<div class="detail-header"><p class="eyebrow">Incidencia #${incident.id}</p><h1>${escapeHtml(incident.title)}</h1><span class="status-badge ${statusClass(incident.status)}">${statusLabel(incident.status)}</span></div>
-            <div class="detail-grid"><div class="detail-item"><small>Categoría</small><strong>${escapeHtml(categoryName(incident.category))}</strong></div><div class="detail-item"><small>Creada por</small><strong>${escapeHtml(displayName(incident.creator))}</strong></div><div class="detail-item"><small>Técnico</small><strong>${escapeHtml(displayName(incident.technician))}</strong></div></div>
-            <div class="d-flex gap-2 mt-4">${canTake ? '<button id="take-incident" class="btn btn-primary" type="button">Tomar incidencia</button>' : ''}${canResolve ? '<button id="resolve-incident" class="btn btn-primary" type="button">Registrar resolución</button>' : ''}</div>
-            <section class="conversation mt-4" aria-label="Conversación de la incidencia"><h2 class="h3">Conversación</h2><div class="conversation-thread">${conversation || '<p class="text-muted">Todavía no hay mensajes.</p>'}</div></section>
-            <form id="comment-form" class="mt-4"><label class="form-label" for="comment-text">Agregar comentario</label><div class="input-group"><input id="comment-text" class="form-control" required maxlength="1000" placeholder="Escribí una actualización"><button class="btn btn-primary" type="submit">Enviar</button></div></form>`);
-        $('#comment-form').on('submit', function (event) { event.preventDefault(); api.addComment(id, $('#comment-text').val()).done(() => loadDetail(id)).fail(() => showAlert('No se pudo agregar el comentario.')); });
-        $('#take-incident').on('click', () => api.take(id).done(() => loadDetail(id)).fail(() => showAlert('No se pudo tomar la incidencia.')));
-        $('#resolve-incident').on('click', () => { const resolution = window.prompt('Escribí la resolución de la incidencia:'); if (resolution?.trim()) api.resolve(id, resolution.trim()).done(() => loadDetail(id)).fail(() => showAlert('No se pudo registrar la resolución.')); });
-    }).fail(() => showAlert('No se pudo cargar el detalle de la incidencia.'));
+        const incidentPayload = unwrap(incidentResponse[0]);
+        const incidentItem = incidentPayload?.incidencia ?? incidentPayload;
+        const commentsPayload = unwrap(commentsResponse[0]);
+        const comments = Array.isArray(commentsPayload) ? commentsPayload : commentsPayload?.comentarios ?? [];
+        renderDetail(incidentItem, comments);
+    }).fail((xhr) => {
+        if (xhr.status === 404) showAlert('La incidencia solicitada no existe o no está disponible para este usuario.');
+        else showAlert('No se pudo cargar el detalle de la incidencia. Verificá que la API esté disponible.');
+    });
 }
 function escapeHtml(value) { return $('<div>').text(value ?? '').html(); }
-function logout(callApi = true) { if (callApi) api.logout().always(() => logout(false)); localStorage.removeItem(TOKEN_KEY); localStorage.removeItem(USER_KEY); state.user = null; if (document.body.dataset.requiredRole) window.location.replace('login.html'); else $('#login-view').removeClass('d-none'); }
-function openApp(user) { state.user = user; localStorage.setItem(USER_KEY, JSON.stringify(user)); if (!document.body.dataset.requiredRole) { window.location.replace(roleHome()); return; } if (!requireRole()) return; $('#current-user-name').text(displayName(user)); $('#current-user-role').text(userType()); const routeId = getIncidentIdFromUrl(); api.categories().done((response) => { state.categories = unwrap(response) || []; renderCategories(); }).always(() => { if ($('#incidents-view').length) loadIncidents(); if (routeId) { setTimeout(() => navigate('detail', routeId), 0); } }); }
-
-$('#login-form').on('submit', function (event) { event.preventDefault(); hideAlert('#login-alert'); const button = $(this).find('button[type="submit"]'); setLoading(button, true); api.login($('#login-email').val(), $('#login-password').val()).done((response) => { const data = unwrap(response); if (data.token) localStorage.setItem(TOKEN_KEY, data.token); openApp(data.user ?? data); }).fail((xhr) => showAlert(xhr.responseJSON?.message ?? 'No se pudo iniciar sesión.', 'danger', '#login-alert')).always(() => setLoading(button, false)); });
-$('#logout-button').on('click', () => logout());
-$('#new-incident-button').on('click', () => navigate('new'));
-$('[data-view]').on('click', function () { navigate($(this).data('view')); });
-$('#status-filter, #category-filter').on('change', loadIncidents);
-$('#clear-filters').on('click', () => { $('#status-filter, #category-filter').val(''); loadIncidents(); });
-$(document).on('click', '.view-detail', function () { navigate('detail', $(this).data('id')); });
-$('#incident-form').on('submit', function (event) { event.preventDefault(); if (userType() !== 'cliente') return; const button = $(this).find('button[type="submit"]'); setLoading(button, true); api.createIncident({ titulo: $('#incident-title').val(), descripcion: $('#incident-description').val(), categoria_id: $('#incident-category').val() }).done(() => window.location.replace('cliente.html')).fail((xhr) => showAlert(xhr.responseJSON?.message ?? 'No se pudo registrar la incidencia.')).always(() => setLoading(button, false)); });
-
-const storedToken = localStorage.getItem(TOKEN_KEY);
-const initialIncidentId = getIncidentIdFromUrl();
-if (storedToken) api.user().done((response) => openApp(unwrap(response))).fail(() => logout(false));
-else if (document.body.dataset.requiredRole) window.location.replace('login.html');
-
-window.addEventListener('popstate', () => {
+function logout(callApi = true) {
+    const clearSession = () => {
+        localStorage.removeItem(TOKEN_KEY);
+        localStorage.removeItem(USER_KEY);
+        state.user = null;
+        if (!$('#login-form').length) window.location.replace('login.html');
+    };
+    if (callApi && localStorage.getItem(TOKEN_KEY)) api.logout().always(clearSession);
+    else clearSession();
+}
+function openListing(user) {
+    state.user = user;
+    localStorage.setItem(USER_KEY, JSON.stringify(user));
+    if ($('#current-user-name').length) $('#current-user-name').text(displayName(user));
+    if ($('#current-user-role').length) $('#current-user-role').text(userType(user));
+    const role = userType(user);
+    if (!role) {
+        logout(false);
+        return;
+    }
+    if (document.body.dataset.requiredRole && document.body.dataset.requiredRole !== role) {
+        window.location.replace(roleHome(role));
+        return;
+    }
+    $('#panel-eyebrow').text(role === 'tecnico' ? 'Mesa de soporte' : 'Panel del cliente');
+    $('#panel-title').text(role === 'tecnico' ? 'Incidencias asignables' : 'Mis incidencias');
+    $('#panel-description').text(role === 'tecnico' ? 'Revisá y seguí los problemas reportados.' : 'Registrá problemas y seguí cada avance.');
+    $('#new-incident-button').toggleClass('d-none', role !== 'cliente');
+    api.categories().done((response) => { state.categories = unwrap(response) || []; renderCategories(); });
+    loadIncidents();
+}
+function openDetail(user) {
+    state.user = user;
+    localStorage.setItem(USER_KEY, JSON.stringify(user));
+    $('#current-user-name').text(displayName(user));
+    $('#current-user-role').text(userType(user));
+    const role = userType(user);
+    const backLink = $('#back-to-incidents');
+    backLink.attr('href', roleHome(role));
+    $('#detail-logout-button').on('click', () => logout());
     const id = getIncidentIdFromUrl();
-    if (id) navigate('detail', id);
-    else if (document.body.dataset.requiredRole) navigate('incidents');
+    if (!id) {
+        showAlert('Falta el identificador de la incidencia en la dirección.');
+        return;
+    }
+    loadDetail(id);
+}
+function initializeCreationPage(user) {
+    state.user = user;
+    localStorage.setItem(USER_KEY, JSON.stringify(user));
+    if (userType(user) !== 'cliente') {
+        window.location.replace(roleHome(userType(user)));
+        return;
+    }
+    api.categories().done((response) => {
+        state.categories = unwrap(response) || [];
+        renderCategories();
+    }).fail(() => showAlert('No se pudieron cargar las categorías. Verificá que la API esté disponible.'));
+}
+
+$('#login-form').on('submit', function (event) {
+    event.preventDefault();
+    hideAlert('#login-alert');
+    const button = $(this).find('button[type="submit"]');
+    setLoading(button, true);
+    api.login($('#login-email').val(), $('#login-password').val())
+        .done((response) => {
+            const payload = unwrap(response);
+            if (payload?.token) localStorage.setItem(TOKEN_KEY, payload.token);
+            const user = payload?.user ?? payload;
+            const role = userType(user);
+            if (!role) {
+                showAlert('La API no devolvió un tipo de usuario reconocido.', 'danger', '#login-alert');
+                return;
+            }
+            localStorage.setItem(USER_KEY, JSON.stringify(user));
+            window.location.replace(roleHome(role));
+        })
+        .fail((xhr) => showAlert(xhr.responseJSON?.message ?? 'No se pudo iniciar sesión.', 'danger', '#login-alert'))
+        .always(() => setLoading(button, false));
 });
 
-if (initialIncidentId && !storedToken && document.body.dataset.requiredRole) {
-    window.location.replace('login.html');
+$(document).on('click', '#logout-button, #detail-logout-button', () => logout());
+$('#status-filter, #category-filter').on('change', loadIncidents);
+$('#clear-filters').on('click', () => { $('#status-filter, #category-filter').val(''); loadIncidents(); });
+$('#incident-form').on('submit', function (event) {
+    event.preventDefault();
+    if (userType() !== 'cliente') return;
+    const button = $(this).find('button[type="submit"]');
+    setLoading(button, true);
+    api.createIncident({ titulo: $('#incident-title').val(), descripcion: $('#incident-description').val(), categoria_id: $('#incident-category').val() })
+        .done((response) => {
+            const payload = unwrap(response);
+            const incident = payload?.incidencia ?? payload;
+            if (!incident?.id) {
+                showAlert('La API creó la incidencia, pero no devolvió su identificador.');
+                return;
+            }
+            this.reset();
+            window.location.assign(detailUrl(incident.id));
+        })
+        .fail((xhr) => showAlert(xhr.responseJSON?.message ?? 'No se pudo registrar la incidencia.'))
+        .always(() => setLoading(button, false));
+});
+
+const storedToken = localStorage.getItem(TOKEN_KEY);
+if ($('#login-form').length) {
+    if (storedToken) api.user().done((response) => {
+        const user = unwrap(response);
+        localStorage.setItem(USER_KEY, JSON.stringify(user));
+        window.location.replace(roleHome(userType(user)));
+    }).fail(() => logout(false));
+} else if ($('#incidents-table-body').length || $('#incident-detail').length || $('#incident-form').length) {
+    if (!storedToken) window.location.replace('login.html');
+    else api.user().done((response) => {
+        const user = unwrap(response);
+        if ($('#incidents-table-body').length) openListing(user);
+        else if ($('#incident-detail').length) openDetail(user);
+        else initializeCreationPage(user);
+    }).fail(() => logout(false));
 }
