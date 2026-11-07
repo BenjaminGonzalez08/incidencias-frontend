@@ -17,10 +17,10 @@ Aplicacion frontend independiente para la mesa tecnica de la ESET-UNQ. La interf
 
 ## Instalacion y ejecucion local
 
-Clonar la rama de trabajo:
+Clonar la rama actual:
 
 ```bash
-git clone -b main-2 https://github.com/BenjaminGonzalez08/incidencias-frontend.git
+git clone -b main https://github.com/BenjaminGonzalez08/incidencias-frontend.git
 cd incidencias-frontend
 ```
 
@@ -30,7 +30,7 @@ El backend debe estar iniciado por separado. Luego servir este directorio:
 php -S localhost:5500 -t .
 ```
 
-Abrir `http://localhost:5500/login.html` en el navegador.
+Abrir `http://localhost:5500/` o `http://localhost:5500/index.html`. El flujo es `index.html` → `login.html` → `cliente.html` o `tecnico.html` → `detalle-incidencia.html?incidencia=ID`. La creación se realiza desde `crear-incidencia.html` y abre el detalle creado.
 
 La URL de la API se configura en `js/app.js`:
 
@@ -55,20 +55,20 @@ Tecnico: tecnico@test.com / 123
 - Creacion de incidencias.
 - Detalle con creador, tecnico, categoria, estado y resolucion.
 - Comentarios cronologicos.
-- El tecnico puede tomar incidencias y registrar resoluciones.
+- El contrato actual de `origin/main` permite listar, consultar, crear y comentar incidencias. Las acciones para tomar y resolver deben habilitarse cuando el backend publique sus endpoints y reglas correspondientes.
 
 ## Flujo de trabajo
 
 ```text
 Cliente crea incidencia -> estado abierto
-Tecnico la toma -> estado en_curso
-Tecnico asignado la resuelve -> estado finalizado
+Técnico toma -> estado en_curso (requiere endpoint disponible)
+Técnico asignado resuelve -> estado finalizado (requiere endpoint disponible)
 ```
 
 El frontend no contiene Blade, modelos ni acceso directo a la base de datos. Toda la informacion se obtiene de la API del backend.
 
 ## Despliegue
 
-El frontend puede publicarse en cualquier servidor estatico, como Apache, Nginx, GitHub Pages o un hosting estatico. Publicar `login.html`, `cliente.html`, `tecnico.html`, `crear-incidencia.html`, `css/` y `js/` en el directorio publico y configurar `API_BASE_URL` para apuntar al backend publicado. `login.html` es la entrada de la aplicacion.
+El frontend puede publicarse en cualquier servidor estático, como Apache, Nginx, GitHub Pages o un hosting estático. Publicar `index.html`, `login.html`, `cliente.html`, `tecnico.html`, `crear-incidencia.html`, `detalle-incidencia.html`, `css/` y `js/` en el directorio público y configurar `API_BASE_URL` para apuntar al backend publicado. `index.html` es la entrada de la aplicación y redirige al login.
 
 El backend debe permitir el dominio final del frontend mediante `CORS_ALLOWED_ORIGINS`. Si el frontend y el backend se publican con HTTPS, ambos deben utilizar HTTPS.
