@@ -2,7 +2,19 @@ const API_BASE_URL = 'http://localhost:8000/api';
 const TOKEN_KEY = 'incidencias_token';
 const USER_KEY = 'incidencias_user';
 
-const state = { user: null, categories: [], incidents: [] };
+const state = {
+    user: null,
+    categories: [],
+    incidents: [],
+    detailIncident: null,
+    commentSignature: '',
+    commentsRequestPending: false,
+    commentsRefreshQueued: false,
+    forceScrollOnCommentsRefresh: false,
+};
+
+const COMMENT_POLL_INTERVAL_MS = 3000;
+let commentPollTimer = null;
 
 const api = {
     request(options) {
@@ -88,7 +100,7 @@ function loadIncidents() {
         showAlert('No se pudieron cargar las incidencias. Verificá que la API esté disponible.');
     });
 }
-function renderDetail(incidentItem, commentsItems, threadScrollTop = 0) {
+function renderConversationMessages(incidentItem, commentsItems) {
     const incident = normalizeIncident(incidentItem);
     const comments = commentsItems.map((comment) => ({
         author: comment.autor ?? comment.user ?? comment.usuario,
@@ -101,15 +113,83 @@ function renderDetail(incidentItem, commentsItems, threadScrollTop = 0) {
         { author: incident.creator, authorId: incident.creatorId ?? incident.creator?.id, content: incident.description, createdAt: incident.createdAt, kind: 'description' },
         ...comments,
     ];
-    if (incident.resolution) messages.push({ author: incident.technician, authorId: incident.technician?.id, content: incident.resolution, createdAt: incident.completedAt, kind: 'resolution' });
+    if (incident.resolution) {
+        messages.push({ author: incident.technician, authorId: incident.technician?.id, content: incident.resolution, createdAt: incident.completedAt, kind: 'resolution' });
+    }
     messages.sort((left, right) => new Date(left.createdAt || 0) - new Date(right.createdAt || 0));
-    const conversation = renderConversation(messages, state.user?.id);
+
+    return renderConversation(messages, state.user?.id);
+}
+
+function commentsFromResponse(response) {
+    const payload = unwrap(response);
+    return Array.isArray(payload) ? payload : payload?.comentarios ?? [];
+}
+
+function signatureForComments(comments) {
+    return JSON.stringify(comments.map((comment) => [
+        comment.id,
+        comment.user_id,
+        comment.contenido ?? comment.comment ?? comment.comentario,
+        comment.created_at,
+    ]));
+}
+
+function updateConversationThread(incidentItem, commentsItems, scrollToLatest = false) {
+    const thread = $('.conversation-thread');
+    if (!thread.length) return;
+
+    const threadElement = thread[0];
+    const wasNearBottom = threadElement.scrollHeight - threadElement.scrollTop - threadElement.clientHeight < 48;
+    thread.html(renderConversationMessages(incidentItem, commentsItems));
+    if (scrollToLatest || wasNearBottom) threadElement.scrollTop = threadElement.scrollHeight;
+}
+
+function refreshComments(id, scrollToLatest = false) {
+    if (document.visibilityState === 'hidden') return;
+    if (state.commentsRequestPending) {
+        state.commentsRefreshQueued = true;
+        state.forceScrollOnCommentsRefresh ||= scrollToLatest;
+        return;
+    }
+
+    state.commentsRequestPending = true;
+    api.comments(id).done((response) => {
+        const comments = commentsFromResponse(response);
+        const signature = signatureForComments(comments);
+        if (signature === state.commentSignature) return;
+
+        state.commentSignature = signature;
+        updateConversationThread(state.detailIncident, comments, scrollToLatest || state.forceScrollOnCommentsRefresh);
+        state.forceScrollOnCommentsRefresh = false;
+    }).always(() => {
+        state.commentsRequestPending = false;
+        if (state.commentsRefreshQueued) {
+            const forceScroll = state.forceScrollOnCommentsRefresh;
+            state.commentsRefreshQueued = false;
+            state.forceScrollOnCommentsRefresh = false;
+            refreshComments(id, forceScroll);
+        }
+    });
+}
+
+function startCommentPolling(id) {
+    window.clearInterval(commentPollTimer);
+    commentPollTimer = window.setInterval(() => refreshComments(id), COMMENT_POLL_INTERVAL_MS);
+}
+
+function renderDetail(incidentItem, commentsItems) {
+    state.detailIncident = incidentItem;
+    state.commentSignature = signatureForComments(commentsItems);
+    const incident = normalizeIncident(incidentItem);
+    const conversation = renderConversationMessages(incidentItem, commentsItems);
 
     $('#incident-detail').html(`<div class="detail-header"><p class="eyebrow">Incidencia #${escapeHtml(incident.id)}</p><h1>${escapeHtml(incident.title)}</h1><span class="status-badge ${statusClass(incident.status)}">${escapeHtml(statusLabel(incident.status))}</span></div>
-        <div class="detail-grid"><div class="detail-item"><small>Categoría</small><strong>${escapeHtml(categoryName(incident.category))}</strong></div><div class="detail-item"><small>Creada por</small><strong>${escapeHtml(displayName(incident.creator))}</strong></div><div class="detail-item"><small>Técnico</small><strong>${escapeHtml(displayName(incident.technician))}</strong></div></div>
-        <section class="conversation mt-4" aria-label="Conversación de la incidencia"><h2 class="h3">Conversación</h2><div class="conversation-thread">${conversation || '<p class="text-muted">Todavía no hay mensajes.</p>'}</div></section>
-        <form id="comment-form" class="mt-4"><label class="form-label" for="comment-text">Agregar comentario</label><div class="input-group"><input id="comment-text" class="form-control" required maxlength="1000" placeholder="Escribí una actualización"><button class="btn btn-primary" type="submit">Enviar</button></div></form>`);
-    $('.conversation-thread').scrollTop(threadScrollTop);
+        <section class="incident-facts mt-4" aria-labelledby="incident-facts-title"><h2 id="incident-facts-title" class="h3">Ficha de incidencia</h2><div class="detail-grid"><div class="detail-item"><small>Categoría</small><strong>${escapeHtml(categoryName(incident.category))}</strong></div><div class="detail-item"><small>Creado por</small><strong>${escapeHtml(displayName(incident.creator))}</strong></div><div class="detail-item"><small>Técnico</small><strong>${escapeHtml(displayName(incident.technician))}</strong></div></div></section>
+        <section class="conversation mt-4" aria-label="Conversación de la incidencia"><h2 class="h3 conversation-heading">Conversación</h2><div class="conversation-thread">${conversation || '<p class="text-muted">Todavía no hay mensajes.</p>'}</div><form id="comment-form" class="conversation-composer"><label class="form-label" for="comment-text">Agregar comentario</label><div class="input-group"><input id="comment-text" class="form-control" required maxlength="1000" placeholder="Escribí una actualización"><button class="btn btn-primary" type="submit">Enviar</button></div></form></section>`);
+    const thread = $('.conversation-thread')[0];
+    if (thread) thread.scrollTop = thread.scrollHeight;
+
     $('#comment-form').on('submit', function (event) {
         event.preventDefault();
         const content = $('#comment-text').val().trim();
@@ -117,29 +197,32 @@ function renderDetail(incidentItem, commentsItems, threadScrollTop = 0) {
         const button = $(this).find('button[type="submit"]');
         button.prop('disabled', true);
         api.addComment(incident.id, content).done(() => {
-            const threadScrollTop = $('.conversation-thread').scrollTop();
             $('#comment-text').val('');
-            api.comments(incident.id).done((response) => {
-                const payload = unwrap(response);
-                const comments = Array.isArray(payload) ? payload : payload?.comentarios ?? [];
-                renderDetail(incidentItem, comments, threadScrollTop);
-            }).fail(() => showAlert('El comentario se guardó, pero no se pudo actualizar la conversación.', 'warning'));
+            refreshComments(incident.id, true);
         }).fail(() => showAlert('No se pudo agregar el comentario.')).always(() => button.prop('disabled', false));
     });
 }
+
 function loadDetail(id) {
     $('#incident-detail').html('<div class="empty-state"><span class="spinner-border spinner-border-sm"></span> Cargando incidencia...</div>');
     $.when(api.incident(id), api.comments(id)).done((incidentResponse, commentsResponse) => {
         const incidentPayload = unwrap(incidentResponse[0]);
         const incidentItem = incidentPayload?.incidencia ?? incidentPayload;
-        const commentsPayload = unwrap(commentsResponse[0]);
-        const comments = Array.isArray(commentsPayload) ? commentsPayload : commentsPayload?.comentarios ?? [];
+        const comments = commentsFromResponse(commentsResponse[0]);
         renderDetail(incidentItem, comments);
+        startCommentPolling(id);
     }).fail((xhr) => {
         if (xhr.status === 404) showAlert('La incidencia solicitada no existe o no está disponible para este usuario.');
         else showAlert('No se pudo cargar el detalle de la incidencia. Verificá que la API esté disponible.');
     });
 }
+
+document.addEventListener('visibilitychange', () => {
+    if (!document.hidden && $('#incident-detail').length) {
+        refreshComments(getIncidentIdFromUrl());
+    }
+});
+
 function escapeHtml(value) { return $('<div>').text(value ?? '').html(); }
 function logout(callApi = true) {
     const clearSession = () => {
@@ -180,7 +263,6 @@ function openDetail(user) {
     const role = userType(user);
     const backLink = $('#back-to-incidents');
     backLink.attr('href', roleHome(role));
-    $('#detail-logout-button').on('click', () => logout());
     const id = getIncidentIdFromUrl();
     if (!id) {
         showAlert('Falta el identificador de la incidencia en la dirección.');
@@ -223,7 +305,7 @@ $('#login-form').on('submit', function (event) {
         .always(() => setLoading(button, false));
 });
 
-$(document).on('click', '#logout-button, #detail-logout-button', () => logout());
+$(document).on('click', '#logout-button', () => logout());
 $('#status-filter, #category-filter').on('change', loadIncidents);
 $('#clear-filters').on('click', () => { $('#status-filter, #category-filter').val(''); loadIncidents(); });
 $('#incident-form').on('submit', function (event) {

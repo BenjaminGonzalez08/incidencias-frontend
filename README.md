@@ -69,6 +69,6 @@ El frontend no contiene Blade, modelos ni acceso directo a la base de datos. Tod
 
 ## Despliegue
 
-El frontend puede publicarse en cualquier servidor estático, como Apache, Nginx, GitHub Pages o un hosting estático. Publicar `index.html`, `login.html`, `cliente.html`, `tecnico.html`, `crear-incidencia.html`, `detalle-incidencia.html`, `css/` y `js/` en el directorio público y configurar `API_BASE_URL` para apuntar al backend publicado. `index.html` es la entrada de la aplicación y redirige al login.
+El frontend puede publicarse en cualquier servidor estático, como Apache, Nginx, GitHub Pages o un hosting estático. Publicar `index.html`, `login.html`, `cliente.html`, `tecnico.html`, `crear-incidencia.html`, `detalle-incidencia.html`, `assets/`, `css/` y `js/` en el directorio público y configurar `API_BASE_URL` para apuntar al backend publicado. `index.html` es la portada y su botón de ingreso lleva a `login.html`.
 
 El backend debe permitir el dominio final del frontend mediante `CORS_ALLOWED_ORIGINS`. Si el frontend y el backend se publican con HTTPS, ambos deben utilizar HTTPS.
