@@ -55,17 +55,26 @@ Tecnico: tecnico@test.com / 123
 - Creacion de incidencias.
 - Detalle con creador, tecnico, categoria, estado y resolucion.
 - Comentarios cronologicos.
-- El contrato actual de `origin/main` permite listar, consultar, crear y comentar incidencias. Las acciones para tomar y resolver deben habilitarse cuando el backend publique sus endpoints y reglas correspondientes.
+- Los tecnicos pueden tomar incidencias abiertas y registrar su resolucion mediante la API.
 
 ## Flujo de trabajo
 
 ```text
-Cliente crea incidencia -> estado abierto
-Técnico toma -> estado en_curso (requiere endpoint disponible)
-Técnico asignado resuelve -> estado finalizado (requiere endpoint disponible)
+Cliente crea incidencia -> estado abierta
+Técnico toma -> estado en_curso
+Técnico asignado resuelve -> estado finalizado
 ```
 
 El frontend no contiene Blade, modelos ni acceso directo a la base de datos. Toda la informacion se obtiene de la API del backend.
+
+## Estructura JavaScript
+
+- `js/api.js`: solicitudes HTTP a la API.
+- `js/helpers.js`: estado compartido y funciones auxiliares.
+- `js/sesiones.js`: inicio/cierre y persistencia de sesión.
+- `js/paginas/`: lógica específica del listado, detalle y creación.
+- `js/componentes/comentarios.js`: renderizado de la conversación.
+- `js/app.js`: conecta los eventos e inicializa la página actual.
 
 ## Despliegue
 
